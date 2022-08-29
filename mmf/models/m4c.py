@@ -3,6 +3,8 @@ import functools
 import logging
 import math
 
+import numpy as np
+from sklearn.preprocessing import MinMaxScaler
 import torch
 import torch.nn.functional as F
 from mmf.common.registry import registry
@@ -88,6 +90,16 @@ class M4C(BaseModel):
         else:
             self.text_bert_out_linear = nn.Identity()
 
+    def create_sinusoidal_embeddings(self,n_pos, dim, out):
+#         out.detach_()
+        out.requires_grad = False
+#         print('out.get_device ',out.get_device())
+        position_enc = np.array([[pos / np.power(10000, 2 * (j // 2) / dim) for j in range(dim)] for pos in range(n_pos)])
+        out[:, 0::2] = torch.FloatTensor(np.sin(position_enc[:, 0::2]))
+        out[:, 1::2] = torch.FloatTensor(np.cos(position_enc[:, 1::2]))
+        out.detach_()
+        out.requires_grad = False
+    
     def _build_obj_encoding(self):
         # object appearance feature: Faster R-CNN
         self.obj_faster_rcnn_fc7 = build_image_encoder(
@@ -114,7 +126,27 @@ class M4C(BaseModel):
         self.remove_ocr_frcn = self.config.ocr.get("remove_ocr_frcn", False)
         self.remove_ocr_semantics = self.config.ocr.get("remove_ocr_semantics", False)
         self.remove_ocr_bbox = self.config.ocr.get("remove_ocr_bbox", False)
-
+        
+        self.position_embeddings_cluster = nn.Embedding(50, 64)
+#         print('self.position_embeddings_cluster.get_device() ',self.position_embeddings_cluster.weight.get_device())
+        if True:
+            self.create_sinusoidal_embeddings(
+                n_pos=50, dim=64, out=self.position_embeddings_cluster.weight
+            )
+            
+        self.position_embeddings_line = nn.Embedding(50, 32)
+        print('self.position_embeddings_line.get_device() ',self.position_embeddings_line.weight.get_device())
+        if True:
+            self.create_sinusoidal_embeddings(
+                n_pos=50, dim=32, out=self.position_embeddings_line.weight
+            )
+            
+        self.position_embeddings_token = nn.Embedding(50, 32)
+        print('self.position_embeddings_token.get_device() ',self.position_embeddings_token.weight.get_device())
+        if True:
+            self.create_sinusoidal_embeddings(
+                n_pos=50, dim=32, out=self.position_embeddings_token.weight
+            )
         # OCR appearance feature: Faster R-CNN
         self.ocr_faster_rcnn_fc7 = build_image_encoder(
             self._build_encoder_config(), direct_features=True
@@ -128,7 +160,8 @@ class M4C(BaseModel):
         )
 
         # OCR location feature: relative bounding box coordinates (4-dim)
-        self.linear_ocr_bbox_to_mmt_in = nn.Linear(4, self.mmt_config.hidden_size)
+        # OCR location feature: after positional emncoding (64-dim)
+        self.linear_ocr_bbox_to_mmt_in = nn.Linear(132, self.mmt_config.hidden_size)
 
         self.ocr_feat_layer_norm = nn.LayerNorm(self.mmt_config.hidden_size)
         self.ocr_bbox_layer_norm = nn.LayerNorm(self.mmt_config.hidden_size)
@@ -199,7 +232,9 @@ class M4C(BaseModel):
         obj_nums = sample_list.image_info_0.max_features
         fwd_results["obj_mask"] = _get_mask(obj_nums, obj_mmt_in.size(1))
 
+    
     def _forward_ocr_encoding(self, sample_list, fwd_results):
+        
         # OCR FastText feature (300-dim)
         ocr_fasttext = sample_list.context_feature_0
         ocr_fasttext = F.normalize(ocr_fasttext, dim=-1)
@@ -229,13 +264,39 @@ class M4C(BaseModel):
             [ocr_fasttext, ocr_phoc, ocr_fc7, ocr_order_vectors], dim=-1
         )
         ocr_bbox = sample_list.ocr_bbox_coordinates
+#         print('ocr_bbox -------------\n',ocr_bbox)
+        if self.remove_ocr_bbox:
+            ocr_bbox = torch.zeros_like(ocr_bbox)
+        ocr_bbox_cluster = sample_list.ocr_bbox_cluster
+
+        # PASS CLUSTER CENTROID AS I/P TO POSITIONAL EMBEDDING - Just Try
+#         cluster_labels = torch.FloatTensor([MinMaxScaler().fit_transform([[y] for y in x]) for x in ocr_bbox_cluster.cluster_labels]).to(torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu'))
+        cluster_labels = torch.LongTensor(ocr_bbox_cluster.cluster_labels).to(torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu'))
+#         print('Standard cluster labels 0 ------\n',cluster_labels[0])
+#         print('cluster labels 0 ------\n',ocr_bbox_cluster.cluster_labels[0])
+        position_embeddings_cluster = self.position_embeddings_cluster(cluster_labels)
+#         print('positional embedding -----\n',position_embeddings_cluster)
+        line_numbers = torch.LongTensor(ocr_bbox_cluster.line_numbers).to(torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu'))
+        position_embeddings_line = self.position_embeddings_line(line_numbers)
+
+        token_numbers = torch.LongTensor(ocr_bbox_cluster.token_numbers).to(torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu'))
+        position_embeddings_token = self.position_embeddings_token(token_numbers)
+
+        
+#         ocr_positional_embeddings = torch.cat((position_embeddings_cluster,position_embeddings_line,position_embeddings_token),dim=2)
+        ocr_positional_embeddings = torch.cat((ocr_bbox,position_embeddings_cluster,position_embeddings_line,position_embeddings_token),dim=2)
+#         ocr_positional_embeddings = torch.cat((ocr_bbox,position_embeddings_cluster,position_embeddings_line),dim=2)
+#         ocr_positional_embeddings = torch.cat((ocr_bbox,cluster_labels),dim=2)
+#         print('ocr_positional_embeddings --------------------\n',ocr_positional_embeddings)
+#         print('ocr_positional_embeddings shape ', ocr_positional_embeddings.shape)
+#         print('128 to {} dim'.format(self.mmt_config.hidden_size))
         if self.remove_ocr_semantics:
             ocr_feat = torch.zeros_like(ocr_feat)
         if self.remove_ocr_bbox:
             ocr_bbox = torch.zeros_like(ocr_bbox)
         ocr_mmt_in = self.ocr_feat_layer_norm(
             self.linear_ocr_feat_to_mmt_in(ocr_feat)
-        ) + self.ocr_bbox_layer_norm(self.linear_ocr_bbox_to_mmt_in(ocr_bbox))
+        ) + self.ocr_bbox_layer_norm(self.linear_ocr_bbox_to_mmt_in(ocr_positional_embeddings))
         ocr_mmt_in = self.ocr_drop(ocr_mmt_in)
         fwd_results["ocr_mmt_in"] = ocr_mmt_in
 

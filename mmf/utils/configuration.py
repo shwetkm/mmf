@@ -12,7 +12,7 @@ from mmf.common.registry import registry
 from mmf.utils.env import import_user_module
 from mmf.utils.file_io import PathManager
 from mmf.utils.general import get_absolute_path, get_mmf_root
-from omegaconf import DictConfig, OmegaConf, errors as OCErrors
+from omegaconf import DictConfig, OmegaConf, errors as OCErrors, open_dict
 
 
 logger = logging.getLogger(__name__)
@@ -134,6 +134,7 @@ def _get_version_and_resources(item):
 
 def get_global_config(key=None):
     config = registry.get("config")
+#     print("get_global_config",config)
     if config is None:
         configuration = Configuration()
         config = configuration.get_config()
@@ -157,7 +158,16 @@ def get_mmf_cache_dir():
 def get_mmf_env(key=None):
     config = get_global_config()
     if key:
-        return OmegaConf.select(config.env, key)
+        try:
+            return OmegaConf.select(config.env, key)
+        except:
+            with open_dict(config):
+                config.env = {"user_dir":''}
+                config.env.model_zoo = 'configs/zoo/models.yaml'
+                config.env.data_dir = '/usr/local/datasets/'
+#             print('get mmf env',config)
+            return OmegaConf.select(config.env, key)
+    
     else:
         return config.env
 

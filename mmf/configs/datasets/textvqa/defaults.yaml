@@ -1,6 +1,6 @@
 dataset_config:
   textvqa:
-      data_dir: ${env.data_dir}/datasets
+      data_dir: /usr/local/datasets/
       depth_first: false
       fast_read: false
       use_images: false
@@ -14,11 +14,17 @@ dataset_config:
         - textvqa/defaults/features/open_images/detectron.lmdb
       annotations:
         train:
-        - textvqa/defaults/annotations/imdb_train_ocr_en.npy
+        - textvqa/defaults/annotations/imdb_train_ocr_en_cluster_baseline_2.npy
+#         - textvqa/defaults/annotations/imdb_train_ocr_en_cluster.npy
+#         - textvqa/defaults/annotations/imdb_train_ocr_en.npy
         val:
-        - textvqa/defaults/annotations/imdb_val_ocr_en.npy
+        - textvqa/defaults/annotations/imdb_val_ocr_en_cluster_baseline_2.npy
+#         - textvqa/defaults/annotations/imdb_val_ocr_en_cluster.npy
+#         - textvqa/defaults/annotations/imdb_val_ocr_en.npy
         test:
-        - textvqa/defaults/annotations/imdb_test_ocr_en.npy
+        - textvqa/defaults/annotations/imdb_test_ocr_en_cluster_baseline_2.npy
+#         - textvqa/defaults/annotations/imdb_test_ocr_en_cluster.npy
+#         - textvqa/defaults/annotations/imdb_test_ocr_en.npy
       processors:
         text_processor:
           type: vocab

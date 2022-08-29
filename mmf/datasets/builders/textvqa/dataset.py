@@ -1,5 +1,6 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 import numpy as np
+import math
 import torch
 from mmf.common.sample import Sample
 from mmf.datasets.mmf_dataset import MMFDataset
@@ -116,6 +117,7 @@ class TextVQADataset(MMFDataset):
 
         return current_sample
 
+    
     def add_sample_details(self, sample_info, sample):
         sample.image_id = object_to_byte_tensor(sample.image_id)
 
@@ -201,6 +203,7 @@ class TextVQADataset(MMFDataset):
             sample.ocr_bbox_coordinates = self.copy_processor(
                 {"blob": sample_info["ocr_normalized_boxes"]}
             )["blob"][:max_len]
+            sample['ocr_bbox_cluster'] = sample_info['ocr_bbox_cluster']
         elif self.use_ocr_info and "ocr_info" in sample_info:
             # Old imdb format: OCR bounding boxes are computed on-the-fly
             # from ocr_info

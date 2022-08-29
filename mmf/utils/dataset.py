@@ -29,7 +29,8 @@ def build_bbox_tensors(infos, max_length):
         coord_tensor[idx][0] = x
         coord_tensor[idx][1] = y
         coord_tensor[idx][2] = x + width
-        coord_tensor[idx][3] = y + height
+#         coord_tensor[idx][3] = y + height
+        coord_tensor[idx][3] = y - height
 
         width_tensor[idx] = width
         height_tensor[idx] = height

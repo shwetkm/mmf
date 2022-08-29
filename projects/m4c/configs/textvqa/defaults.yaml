@@ -65,7 +65,8 @@ dataset_config:
 optimizer:
   params:
     eps: 1.0e-08
-    lr: 1e-4
+    lr: 1e-4 #this is the actual old value
+#     lr: 1e-3
     weight_decay: 0
   type: Adam
 
